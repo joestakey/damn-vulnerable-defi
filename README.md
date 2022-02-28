@@ -1,17 +1,23 @@
 ![](cover.png)
+<h1> Joe Stakey's solutions</h1>
+My solutions to [@tinchoabbate](https://twitter.com/tinchoabbate) 's damnvulnerabledefi.xyz Solidity challenges.
+The solutions scripts are in the **test** directory.
+For some challenges, an external Solidity contract was created to perform the attack. You will find these contracts in **contracts/attacker-contracts**
+The scripts and contracts contain comments explaining how the attack was set up.
 
-**A set of challenges to hack implementations of DeFi in Ethereum.**
 
-Featuring flash loans, price oracles, governance, NFTs, lending pools, smart contract wallets, timelocks, and more!
+## Try it out
 
-Created by [@tinchoabbate](https://twitter.com/tinchoabbate)
+Clone the repository
+```
+git clone https://github.com/joestakey/damn-vulnerable-defi.git
+```
+Install all the dependencies
+```
+npm install
+```
+Run a challenge
+```
+npm run <challenge_name>
+```
 
-## Play
-
-Visit [damnvulnerabledefi.xyz](https://damnvulnerabledefi.xyz)
-
-## Disclaimer
-
-All Solidity code, practices and patterns in this repository are DAMN VULNERABLE and for educational purposes only.
-
-DO NOT USE IN PRODUCTION.
