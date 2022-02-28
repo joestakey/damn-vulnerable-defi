@@ -39,6 +39,18 @@ describe('[Challenge] Unstoppable', function () {
     });
 
     it('Exploit', async function () {
+        /** 
+        *@dev
+        *A simple way to stop flash loans from happening is to ensure one of the require/assert statements in flashLoan() never passes.
+        *The UnstoppableLender contract has a state variable, poolBalance, that gets incremented by a deposited amount of tokens every time someone deposits DVT tokens in the pool via the depositTokens() function.
+        *However poolBalance will not be updated if someone deposits DVT tokens in the pool using the ERC20 function transfer()
+        *Here is our we are breaking the flash loans:
+        *Transfer any amount of DVT tokens (we start the game with 100) into the pool using the ERC20 transfer() function.
+        *From that point, the state variable poolBalance will not be equal to the DVT token balance of the pool.
+            => the assert() statement line 40 will fail, preventing the flash loan from going through
+
+        */
+        await this.token.transfer(this.pool.address, 1);
         /** CODE YOUR EXPLOIT HERE */
     });
 

