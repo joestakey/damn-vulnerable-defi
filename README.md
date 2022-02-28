@@ -1,8 +1,8 @@
 ![](cover.png)
 <h1> Joe Stakey's solutions</h1>
-My solutions to [@tinchoabbate](https://twitter.com/tinchoabbate) 's damnvulnerabledefi.xyz Solidity challenges.
-The solutions scripts are in the **test** directory.
-For some challenges, an external Solidity contract was created to perform the attack. You will find these contracts in **contracts/attacker-contracts**
+My solutions to <a href="https://twitter.com/tinchoabbate">@tinchoabbate</a>'s <a href="https://www.damnvulnerabledefi.xyz/index.html">damnvulnerabledefi.xyz</a> Solidity challenges.<br>
+The solutions scripts are in the <b>test</b> directory.<br>
+For some challenges, an external Solidity contract was created to perform the attack. You will find these contracts in <b>contracts/attacker-contracts</b>.<br>
 The scripts and contracts contain comments explaining how the attack was set up.
 
 
